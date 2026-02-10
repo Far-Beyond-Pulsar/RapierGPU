@@ -46,6 +46,8 @@ mod pipeline;
 #[cfg(feature = "gpu-acceleration")]
 mod integrator;
 #[cfg(feature = "gpu-acceleration")]
+mod resident_state;
+#[cfg(feature = "gpu-acceleration")]
 mod tests;
 
 #[cfg(feature = "gpu-acceleration")]
@@ -56,6 +58,8 @@ pub use buffer_manager::{BufferManager, RigidBodyGpuBuffer};
 pub use pipeline::GpuComputePipeline;
 #[cfg(feature = "gpu-acceleration")]
 pub use integrator::GpuIntegrator;
+#[cfg(feature = "gpu-acceleration")]
+pub use resident_state::GpuResidentState;
 
 /// Re-export WGPU types for convenience
 #[cfg(feature = "gpu-acceleration")]
