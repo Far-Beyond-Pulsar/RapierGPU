@@ -187,14 +187,14 @@ impl BufferManager {
             {
                 let angvel = body.angvel();
                 ang_vels.push(GpuVector3 {
-                    x: angvel,
+                    x: 0.0,
                     y: 0.0,
-                    z: 0.0,
+                    z: angvel,
                     _padding: 0.0,
                 });
             }
             
-            // Forces (accumulated)
+            // User forces
             let force = body.user_force();
             #[cfg(feature = "dim3")]
             forces.push(Self::vector_to_gpu_from_vec3(&force));
@@ -215,16 +215,16 @@ impl BufferManager {
             {
                 let torque = body.user_torque();
                 torques.push(GpuVector3 {
-                    x: torque,
+                    x: 0.0,
                     y: 0.0,
-                    z: 0.0,
+                    z: torque,
                     _padding: 0.0,
                 });
             }
             
-            inv_masses.push(body.mass_properties().local_mprops.inv_mass);
+            let inv_mass = body.mass_properties().local_mprops.inv_mass;
+            inv_masses.push(inv_mass);
             
-            // Inverse inertia tensor
             #[cfg(feature = "dim3")]
             {
                 // SdpMatrix3 is symmetric, extract as Matrix3
@@ -260,6 +260,71 @@ impl BufferManager {
         self.queue.write_buffer(&gpu_buffer.torques_buffer, 0, bytemuck::cast_slice(&torques));
         self.queue.write_buffer(&gpu_buffer.inv_masses_buffer, 0, bytemuck::cast_slice(&inv_masses));
         self.queue.write_buffer(&gpu_buffer.inv_inertias_buffer, 0, bytemuck::cast_slice(&inv_inertias));
+    }
+
+    /// Download rigid body data from GPU back to CPU.
+    /// Returns vectors of positions and velocities in SoA layout.
+    pub fn download_rigid_bodies(&self, gpu_buffer: &RigidBodyGpuBuffer) -> (Vec<GpuVector3>, Vec<GpuVector3>) {
+        // Create staging buffers for readback
+        let positions_staging = self.device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("Positions Staging Buffer"),
+            size: (gpu_buffer.body_count * std::mem::size_of::<GpuVector3>()) as u64,
+            usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+
+        let velocities_staging = self.device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("Velocities Staging Buffer"),
+            size: (gpu_buffer.body_count * std::mem::size_of::<GpuVector3>()) as u64,
+            usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+
+        // Create command encoder and copy data
+        let mut encoder = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("Download Encoder"),
+        });
+
+        encoder.copy_buffer_to_buffer(
+            &gpu_buffer.positions_buffer,
+            0,
+            &positions_staging,
+            0,
+            (gpu_buffer.body_count * std::mem::size_of::<GpuVector3>()) as u64,
+        );
+
+        encoder.copy_buffer_to_buffer(
+            &gpu_buffer.lin_velocities_buffer,
+            0,
+            &velocities_staging,
+            0,
+            (gpu_buffer.body_count * std::mem::size_of::<GpuVector3>()) as u64,
+        );
+
+        self.queue.submit(Some(encoder.finish()));
+
+        // Map and read the staging buffers
+        let positions_slice = positions_staging.slice(..);
+        let velocities_slice = velocities_staging.slice(..);
+
+        positions_slice.map_async(wgpu::MapMode::Read, |_| {});
+        velocities_slice.map_async(wgpu::MapMode::Read, |_| {});
+
+        self.device.poll(wgpu::Maintain::Wait);
+
+        let positions_data = positions_slice.get_mapped_range();
+        let velocities_data = velocities_slice.get_mapped_range();
+
+        let positions: Vec<GpuVector3> = bytemuck::cast_slice(&positions_data).to_vec();
+        let velocities: Vec<GpuVector3> = bytemuck::cast_slice(&velocities_data).to_vec();
+
+        drop(positions_data);
+        drop(velocities_data);
+        
+        positions_staging.unmap();
+        velocities_staging.unmap();
+
+        (positions, velocities)
     }
 
     /// Helper to convert Rapier vector to GPU format (3D).

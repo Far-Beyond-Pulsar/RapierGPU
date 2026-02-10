@@ -82,12 +82,14 @@ fn benchmark_buffer_upload(c: &mut Criterion) {
     for &scale in SCALES {
         let bodies = create_test_bodies(scale);
         
+        // Create buffer once outside the benchmark iteration
+        let mut gpu_buffer = buffer_manager.create_rigid_body_buffer(bodies.len());
+        
         group.throughput(Throughput::Elements(scale as u64));
         group.bench_with_input(
             BenchmarkId::from_parameter(scale),
             &scale,
             |b, _| {
-                let mut gpu_buffer = buffer_manager.create_rigid_body_buffer(bodies.len());
                 b.iter(|| {
                     buffer_manager.upload_rigid_bodies(&bodies, &mut gpu_buffer);
                 });
@@ -171,19 +173,20 @@ fn benchmark_roundtrip(c: &mut Criterion) {
     for &scale in SCALES {
         let bodies = create_test_bodies(scale);
         
+        // Create buffer once outside the benchmark iteration
+        let mut gpu_buffer = buffer_manager.create_rigid_body_buffer(bodies.len());
+        
         group.throughput(Throughput::Elements(scale as u64));
         group.bench_with_input(
             BenchmarkId::from_parameter(scale),
             &scale,
             |b, _| {
-                let mut gpu_buffer = buffer_manager.create_rigid_body_buffer(bodies.len());
                 b.iter(|| {
-                    // Upload
+                    // Upload to GPU
                     buffer_manager.upload_rigid_bodies(&bodies, &mut gpu_buffer);
                     
-                    // TODO: GPU compute goes here
-                    
-                    // TODO: Download (not yet implemented)
+                    // Download from GPU back to CPU
+                    let (_positions, _velocities) = buffer_manager.download_rigid_bodies(&gpu_buffer);
                 });
             },
         );
@@ -203,7 +206,7 @@ fn benchmark_critical_comparison(c: &mut Criterion) {
         
         group.throughput(Throughput::Elements(scale as u64));
         
-        // CPU baseline
+        // CPU baseline: iterate and sum velocities
         group.bench_function("cpu", |b| {
             b.iter(|| {
                 let mut sum = Vector::new(0.0, 0.0, 0.0);
@@ -214,14 +217,15 @@ fn benchmark_critical_comparison(c: &mut Criterion) {
             });
         });
         
-        // GPU (if available)
+        // GPU: upload + download roundtrip (if available)
         if let Ok(gpu_ctx) = GpuContext::new() {
             let buffer_manager = BufferManager::new(gpu_ctx.device, gpu_ctx.queue);
+            let mut gpu_buffer = buffer_manager.create_rigid_body_buffer(bodies.len());
             
-            group.bench_function("gpu_upload", |b| {
-                let mut gpu_buffer = buffer_manager.create_rigid_body_buffer(bodies.len());
+            group.bench_function("gpu_roundtrip", |b| {
                 b.iter(|| {
                     buffer_manager.upload_rigid_bodies(&bodies, &mut gpu_buffer);
+                    let (_positions, _velocities) = buffer_manager.download_rigid_bodies(&gpu_buffer);
                 });
             });
         }
