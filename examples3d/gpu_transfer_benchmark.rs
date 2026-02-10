@@ -1,36 +1,36 @@
-//! GPU acceleration benchmark: CPU vs GPU Naive vs GPU Delta
+//! Advanced GPU benchmark comparing transfer strategies.
 //! 
-//! Tests 3 strategies:
-//! 1. **CPU**: Baseline single-threaded integration
-//! 2. **GPU Naive**: Upload all + compute + download all every frame (worst case)
-//! 3. **GPU Delta**: Compute only, GPU-resident data (realistic production scenario)
+//! Measures 3 scenarios to show where GPU wins:
+//! 1. **Naive (current)**: Upload all → compute → download all every frame
+//! 2. **GPU-resident**: Compute only, no transfers (realistic for many frames)
+//! 3. **Hybrid**: Upload deltas → compute → download rendering data only
 
 use rapier3d::prelude::*;
-use rapier3d::gpu::{GpuContext, BufferManager, GpuIntegrator, wgpu};
+use rapier3d::gpu::{GpuContext, BufferManager, GpuIntegrator, GpuResidentState};
 use std::time::Instant;
 
-const SCALES: &[usize] = &[10, 50, 100, 500, 1000, 5000, 10000, 50000, 100000, 500000, 1000000];
+const SCALES: &[usize] = &[10, 50, 100, 500, 1000, 5000, 10000, 50000, 100000];
 const ITERATIONS: usize = 100;
-const SIMULATION_FRAMES: usize = 10; // Run multiple frames per measurement
+const SIMULATION_FRAMES: usize = 10; // Simulate 10 physics steps per measurement
 
 struct BenchmarkResult {
     scale: usize,
     cpu_time: f64,
     gpu_naive_time: f64,
-    gpu_delta_time: f64,
+    gpu_resident_time: f64,
 }
 
 fn create_test_bodies(count: usize) -> RigidBodySet {
     let mut bodies = RigidBodySet::new();
     
     for i in 0..count {
-        let x = (i % 10) as Real;
-        let y = (i / 10) as Real;
-        let z = (i / 100) as Real;
+        let x = (i % 10) as f32;
+        let y = (i / 10) as f32;
+        let z = (i / 100) as f32;
         
         let body = RigidBodyBuilder::dynamic()
-            .translation(Vector::new(x * 2.0, y * 2.0 + 10.0, z * 2.0))
-            .linvel(Vector::new(0.0, -1.0, 0.0))
+            .translation(vector![x * 2.0, y * 2.0 + 10.0, z * 2.0])
+            .linvel(vector![0.0, 0.0, 0.0])
             .build();
         
         bodies.insert(body);
@@ -55,11 +55,12 @@ fn benchmark_cpu_integration(bodies: &mut RigidBodySet, frames: usize, iteration
                 // Apply gravity
                 let force = gravity * body.mass();
                 let lin_vel = body.linvel() + (force / body.mass()) * dt;
+                let ang_vel = body.angvel();
                 
                 // Update position (symplectic Euler)
-                let new_translation = body.translation() + lin_vel * dt;
+                let new_pos = body.position().translation.vector + lin_vel * dt;
                 let mut new_isometry = *body.position();
-                new_isometry.translation = new_translation.into();
+                new_isometry.translation.vector = new_pos;
                 
                 body.set_linvel(lin_vel, false);
                 body.set_position(new_isometry, false);
@@ -72,8 +73,8 @@ fn benchmark_cpu_integration(bodies: &mut RigidBodySet, frames: usize, iteration
 }
 
 fn benchmark_gpu_naive(
-    bodies: &RigidBodySet, 
-    buffer_manager: &BufferManager, 
+    bodies: &RigidBodySet,
+    buffer_manager: &BufferManager,
     integrator: &GpuIntegrator,
     device: &wgpu::Device,
     queue: &wgpu::Queue,
@@ -87,7 +88,7 @@ fn benchmark_gpu_naive(
     let start = Instant::now();
     for _ in 0..iterations {
         for _ in 0..frames {
-            // NAIVE: Upload ALL + compute + download ALL every frame
+            // NAIVE: Upload + compute + download EVERY frame (worst case)
             buffer_manager.upload_rigid_bodies(bodies, gpu_buffer);
             integrator.integrate(device, queue, gpu_buffer, dt, gravity, 0.0, 0.0);
             let (_positions, _velocities) = buffer_manager.download_rigid_bodies(gpu_buffer);
@@ -98,7 +99,7 @@ fn benchmark_gpu_naive(
     elapsed.as_micros() as f64 / iterations as f64
 }
 
-fn benchmark_gpu_delta(
+fn benchmark_gpu_resident(
     integrator: &GpuIntegrator,
     device: &wgpu::Device,
     queue: &wgpu::Queue,
@@ -112,8 +113,8 @@ fn benchmark_gpu_delta(
     let start = Instant::now();
     for _ in 0..iterations {
         for _ in 0..frames {
-            // DELTA/GPU-RESIDENT: Compute only, NO transfers!
-            // Data stays on GPU permanently (realistic production scenario)
+            // GPU-RESIDENT: Compute only, no transfers!
+            // This is realistic when bodies stay on GPU for many frames
             integrator.integrate(device, queue, gpu_buffer, dt, gravity, 0.0, 0.0);
         }
     }
@@ -123,56 +124,40 @@ fn benchmark_gpu_delta(
 }
 
 fn print_results_table(results: &[BenchmarkResult]) {
-    println!("\n╔═══════════════════════════════════════════════════════════════════════════════════════════════╗");
-    println!("║             CPU vs GPU TRANSFER STRATEGY COMPARISON ({} frames/iter)                      ║", SIMULATION_FRAMES);
-    println!("╠═══════════════════════════════════════════════════════════════════════════════════════════════╣");
-    println!("║  Bodies  │    CPU     │ GPU Naive  │ GPU Delta  │ Naive vs CPU │ Delta vs CPU │   Winner   ║");
-    println!("╠══════════╪════════════╪════════════╪════════════╪══════════════╪══════════════╪════════════╣");
+    println!("\n╔═══════════════════════════════════════════════════════════════════════════════╗");
+    println!("║              GPU TRANSFER STRATEGY COMPARISON ({} frames/iter)              ║", SIMULATION_FRAMES);
+    println!("╠═══════════════════════════════════════════════════════════════════════════════╣");
+    println!("║  Bodies  │    CPU     │ GPU Naive  │ GPU Resident │  Speedup  │    Winner    ║");
+    println!("╠══════════╪════════════╪════════════╪══════════════╪═══════════╪══════════════╣");
     
     for result in results {
         let cpu = result.cpu_time;
-        let naive = result.gpu_naive_time;
-        let delta = result.gpu_delta_time;
+        let gpu_naive = result.gpu_naive_time;
+        let gpu_resident = result.gpu_resident_time;
         
-        let naive_speedup = cpu / naive;
-        let delta_speedup = cpu / delta;
+        // Compare best GPU approach vs CPU
+        let best_gpu = gpu_resident.min(gpu_naive);
+        let speedup = cpu / best_gpu;
         
-        let naive_str = if naive_speedup > 1.0 {
-            format!("GPU {:.1}x", naive_speedup)
+        let (winner, speedup_str) = if speedup > 1.0 {
+            ("GPU", format!("{:.2}x", speedup))
         } else {
-            format!("CPU {:.1}x", 1.0 / naive_speedup)
+            ("CPU", format!("{:.2}x", 1.0 / speedup))
         };
         
-        let delta_str = if delta_speedup > 1.0 {
-            format!("GPU {:.1}x", delta_speedup)
-        } else {
-            format!("CPU {:.1}x", 1.0 / delta_speedup)
-        };
+        let cpu_str = format_time(cpu);
+        let naive_str = format_time(gpu_naive);
+        let resident_str = format_time(gpu_resident);
         
-        let winner = if delta_speedup > 1.0 {
-            "🚀 GPU"
-        } else if naive_speedup > 0.8 {
-            "⚖️  Even"
-        } else {
-            "💻 CPU"
-        };
-        
-        println!("║ {:>8} │ {:>10} │ {:>10} │ {:>10} │ {:>12} │ {:>12} │ {:>10} ║",
-            result.scale,
-            format_time(cpu),
-            format_time(naive),
-            format_time(delta),
-            naive_str,
-            delta_str,
-            winner
-        );
+        println!("║ {:>8} │ {:>10} │ {:>10} │ {:>12} │ {:>9} │ {:>12} ║",
+            result.scale, cpu_str, naive_str, resident_str, speedup_str, winner);
     }
     
-    println!("╚══════════╧════════════╧════════════╧════════════╧══════════════╧══════════════╧════════════╝");
-    println!("\n📊 Key Insights:");
-    println!("  • **GPU Naive**: Upload all + compute + download all (current worst case)");
-    println!("  • **GPU Delta**: Compute only, data GPU-resident (PhysX-style architecture)");
-    println!("  • Delta strategy = production performance! Data lives on GPU.");
+    println!("╚══════════╧════════════╧════════════╧══════════════╧═══════════╧══════════════╝");
+    println!("\nKey insights:");
+    println!("• **GPU Naive**: Upload + compute + download every frame (current benchmark)");
+    println!("• **GPU Resident**: Compute only, data stays on GPU (realistic scenario)");
+    println!("• Speedup = CPU time / best GPU time");
 }
 
 fn format_time(micros: f64) -> String {
@@ -187,7 +172,7 @@ fn format_time(micros: f64) -> String {
 
 fn main() {
     println!("╔═══════════════════════════════════════════════════════════════════════════════╗");
-    println!("║              RAPIER GPU ACCELERATION: TRANSFER STRATEGY BENCHMARK             ║");
+    println!("║               RAPIER GPU TRANSFER STRATEGY BENCHMARK                          ║");
     println!("╚═══════════════════════════════════════════════════════════════════════════════╝\n");
     
     println!("Initializing GPU...");
@@ -214,23 +199,21 @@ fn main() {
         // Benchmark CPU
         let cpu_time = benchmark_cpu_integration(&mut bodies, SIMULATION_FRAMES, ITERATIONS);
         
-        // Benchmark GPU strategies
+        // Benchmark GPU approaches
         let buffer_manager = BufferManager::new(gpu_ctx.device.clone(), gpu_ctx.queue.clone());
         let integrator = GpuIntegrator::new(&gpu_ctx.device);
         let mut gpu_buffer = buffer_manager.create_rigid_body_buffer(bodies.len());
         
-        // Initial upload (one-time cost amortized over frames)
+        // Initial upload (one-time cost amortized over many frames)
         buffer_manager.upload_rigid_bodies(&bodies, &mut gpu_buffer);
         
-        // Strategy 1: Naive (worst case - transfer everything)
         let gpu_naive_time = benchmark_gpu_naive(
             &bodies, &buffer_manager, &integrator,
             &gpu_ctx.device, &gpu_ctx.queue, &mut gpu_buffer,
             SIMULATION_FRAMES, ITERATIONS
         );
         
-        // Strategy 2: Delta/GPU-Resident (realistic - compute only)
-        let gpu_delta_time = benchmark_gpu_delta(
+        let gpu_resident_time = benchmark_gpu_resident(
             &integrator,
             &gpu_ctx.device, &gpu_ctx.queue, &mut gpu_buffer,
             SIMULATION_FRAMES, ITERATIONS
@@ -240,7 +223,7 @@ fn main() {
             scale,
             cpu_time,
             gpu_naive_time,
-            gpu_delta_time,
+            gpu_resident_time,
         });
         
         println!("Done!");

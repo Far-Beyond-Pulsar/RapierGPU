@@ -113,7 +113,7 @@ impl GpuResidentState {
                     // Find handle of last body and update its index
                     let last_handle = self.handle_to_index
                         .iter()
-                        .find(|(_, &idx)| idx == self.gpu_body_count - 1)
+                        .find(|&(_, &idx)| idx == self.gpu_body_count - 1)
                         .map(|(h, _)| *h);
                     
                     if let Some(last_handle) = last_handle {
@@ -126,20 +126,21 @@ impl GpuResidentState {
             }
         }
         
-        // Handle additions
-        for handle in &self.dirty.added {
+        // Handle additions (collect first to avoid borrow conflicts)
+        let added_handles: Vec<_> = self.dirty.added.iter().copied().collect();
+        for handle in added_handles {
             if self.gpu_body_count >= self.capacity {
                 // Resize GPU buffers
                 self.resize_gpu_buffers(self.capacity * 2);
             }
             
             let index = self.gpu_body_count;
-            self.handle_to_index.insert(*handle, index);
+            self.handle_to_index.insert(handle, index);
             self.gpu_body_count += 1;
         }
         
         // Upload modified + added bodies
-        let mut bodies_to_upload = self.dirty.added.iter()
+        let bodies_to_upload = self.dirty.added.iter()
             .chain(self.dirty.modified.iter())
             .filter_map(|h| bodies.get(*h).map(|b| (*h, b)))
             .collect::<Vec<_>>();
