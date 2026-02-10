@@ -44,6 +44,8 @@ mod buffer_manager;
 #[cfg(feature = "gpu-acceleration")]
 mod pipeline;
 #[cfg(feature = "gpu-acceleration")]
+mod integrator;
+#[cfg(feature = "gpu-acceleration")]
 mod tests;
 
 #[cfg(feature = "gpu-acceleration")]
@@ -52,6 +54,8 @@ pub use device::GpuContext;
 pub use buffer_manager::{BufferManager, RigidBodyGpuBuffer};
 #[cfg(feature = "gpu-acceleration")]
 pub use pipeline::GpuComputePipeline;
+#[cfg(feature = "gpu-acceleration")]
+pub use integrator::GpuIntegrator;
 
 /// Re-export WGPU types for convenience
 #[cfg(feature = "gpu-acceleration")]

@@ -4,11 +4,12 @@
 //! and prints an easy-to-read comparison table.
 
 use rapier3d::prelude::*;
-use rapier3d::gpu::{GpuContext, BufferManager};
+use rapier3d::gpu::{GpuContext, BufferManager, GpuIntegrator};
 use std::time::Instant;
+ use rapier3d::gpu::wgpu;
 
 /// Test scales: body counts
-const SCALES: &[usize] = &[10, 50, 100, 500, 1_000, 5_000, 10_000];
+const SCALES: &[usize] = &[10, 50, 100, 500, 1_000, 5_000, 10_000, 50_000, 100_000, 500_000, 1_000_000];
 const ITERATIONS: usize = 10; // Number of iterations to average
 
 struct BenchmarkResult {
@@ -84,10 +85,27 @@ fn benchmark_cpu_integration(bodies: &RigidBodySet, iterations: usize) -> f64 {
     elapsed.as_micros() as f64 / iterations as f64
 }
 
-fn benchmark_gpu_transfer(bodies: &RigidBodySet, buffer_manager: &BufferManager, gpu_buffer: &mut rapier3d::gpu::RigidBodyGpuBuffer, iterations: usize) -> f64 {
+fn benchmark_gpu_integration(
+    bodies: &RigidBodySet, 
+    buffer_manager: &BufferManager, 
+    integrator: &GpuIntegrator,
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    gpu_buffer: &mut rapier3d::gpu::RigidBodyGpuBuffer, 
+    iterations: usize
+) -> f64 {
+    let dt = 1.0 / 60.0;
+    let gravity = [0.0, -9.81, 0.0];
+    
     let start = Instant::now();
     for _ in 0..iterations {
+        // Upload data to GPU
         buffer_manager.upload_rigid_bodies(bodies, gpu_buffer);
+        
+        // Run GPU integration compute shader
+        integrator.integrate(device, queue, gpu_buffer, dt, gravity, 0.0, 0.0);
+        
+        // Download results from GPU
         let (_positions, _velocities) = buffer_manager.download_rigid_bodies(gpu_buffer);
     }
     let elapsed = start.elapsed();
@@ -123,8 +141,8 @@ fn print_results_table(results: &[BenchmarkResult]) {
     }
     
     println!("╚══════════╧════════════════╧════════════════╧═════════════╧═══════════════════╝");
-    println!("\nNote: GPU times include CPU↔GPU transfer overhead.");
-    println!("      Actual GPU compute will be added in Phase 2.");
+    println!("\nNote: GPU times now include ACTUAL GPU COMPUTE (integration kernel)!");
+    println!("      Transfer overhead + compute shader execution on RTX 4090.");
 }
 
 fn format_time(us: f64) -> String {
@@ -143,11 +161,10 @@ fn main() {
     println!("╚═══════════════════════════════════════════════════════════════════════════════╝\n");
     
     println!("Initializing GPU...");
-    let gpu_setup = match GpuContext::new() {
+    let gpu_ctx = match GpuContext::new() {
         Ok(ctx) => {
             println!("✓ GPU initialized: {}", ctx.adapter.get_info().name);
-            let buffer_manager = BufferManager::new(ctx.device, ctx.queue);
-            Some(buffer_manager)
+            Some(ctx)
         },
         Err(e) => {
             println!("✗ GPU not available: {:?}", e);
@@ -168,9 +185,13 @@ fn main() {
         let cpu_time = benchmark_cpu_integration(&bodies, ITERATIONS);
         
         // Benchmark GPU if available
-        let gpu_time = if let Some(ref buffer_manager) = gpu_setup {
+        let gpu_time = if let Some(ref ctx) = gpu_ctx {
+            // Create buffer manager and integrator with the same device
+            let buffer_manager = BufferManager::new(ctx.device.clone(), ctx.queue.clone());
+            let integrator = GpuIntegrator::new(&ctx.device);
+            
             let mut gpu_buffer = buffer_manager.create_rigid_body_buffer(bodies.len());
-            benchmark_gpu_transfer(&bodies, buffer_manager, &mut gpu_buffer, ITERATIONS)
+            benchmark_gpu_integration(&bodies, &buffer_manager, &integrator, &ctx.device, &ctx.queue, &mut gpu_buffer, ITERATIONS)
         } else {
             0.0
         };

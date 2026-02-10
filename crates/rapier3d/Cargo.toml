@@ -111,5 +111,5 @@ criterion = { version = "0.5", features = ["html_reports"] }
 
 [[bench]]
 name = "gpu_benchmarks"
-harness = false
+harness = true
 required-features = ["gpu-acceleration"]

@@ -75,13 +75,13 @@ pub struct GpuMatrix3 {
 
 /// Manages GPU buffer lifecycle and CPU↔GPU transfers.
 pub struct BufferManager {
-    device: wgpu::Device,
-    queue: wgpu::Queue,
+    device: std::sync::Arc<wgpu::Device>,
+    queue: std::sync::Arc<wgpu::Queue>,
 }
 
 impl BufferManager {
     /// Creates a new buffer manager.
-    pub fn new(device: wgpu::Device, queue: wgpu::Queue) -> Self {
+    pub fn new(device: std::sync::Arc<wgpu::Device>, queue: std::sync::Arc<wgpu::Queue>) -> Self {
         Self { device, queue }
     }
 

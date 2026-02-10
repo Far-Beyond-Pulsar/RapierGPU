@@ -43,6 +43,10 @@ path = "./all_examples3.rs"
 name = "harness_capsules3"
 path = "./harness_capsules3.rs"
 
+[[bin]]
+name = "gpu_benchmark"
+path = "./gpu_benchmark.rs"
+
 #[lib]
 #crate-type = ["cdylib", "rlib"]
 #path = "./all_examples3_wasm.rs"

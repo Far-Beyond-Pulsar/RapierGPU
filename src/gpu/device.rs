@@ -1,5 +1,6 @@
 //! GPU device initialization and management.
 
+use std::sync::Arc;
 use wgpu;
 
 /// GPU context managing WGPU device, queue, and adapter.
@@ -9,8 +10,8 @@ use wgpu;
 /// - Feature validation (compute shaders required)
 /// - Adapter capabilities checking
 pub struct GpuContext {
-    pub device: wgpu::Device,
-    pub queue: wgpu::Queue,
+    pub device: Arc<wgpu::Device>,
+    pub queue: Arc<wgpu::Queue>,
     pub adapter: wgpu::Adapter,
 }
 
@@ -105,8 +106,8 @@ impl GpuContext {
         log::info!("GPU device initialized successfully");
 
         Ok(Self {
-            device,
-            queue,
+            device: Arc::new(device),
+            queue: Arc::new(queue),
             adapter,
         })
     }
