@@ -66,8 +66,8 @@ mod tests {
                 .expect("GPU missing body that CPU has");
 
             // Compare positions
-            let cpu_pos = cpu_body.position().translation.vector;
-            let gpu_pos = gpu_body.position().translation.vector;
+            let cpu_pos = &cpu_body.position().translation;
+            let gpu_pos = &gpu_body.position().translation;
             
             #[cfg(feature = "dim3")]
             {
@@ -144,8 +144,8 @@ mod tests {
         let (bodies, _colliders) = create_test_scene();
         
         let buffer_manager = BufferManager::new(
-            gpu_ctx.device.clone(),
-            gpu_ctx.queue.clone()
+            gpu_ctx.device,
+            gpu_ctx.queue
         );
 
         let mut gpu_buffer = buffer_manager.create_rigid_body_buffer(bodies.len());
@@ -300,8 +300,8 @@ mod tests {
         println!("Created {} bodies", bodies.len());
 
         let buffer_manager = BufferManager::new(
-            gpu_ctx.device.clone(),
-            gpu_ctx.queue.clone()
+            gpu_ctx.device,
+            gpu_ctx.queue
         );
 
         let mut gpu_buffer = buffer_manager.create_rigid_body_buffer(bodies.len());
