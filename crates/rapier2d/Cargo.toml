@@ -103,3 +103,9 @@ bincode = "1"
 serde_json = "1"
 serde = { version = "1", features = ["derive"] }
 oorandom = { version = "11", default-features = false }
+criterion = { version = "0.5", features = ["html_reports"] }
+
+[[bench]]
+name = "gpu_benchmarks"
+harness = false
+required-features = ["gpu-acceleration"]
