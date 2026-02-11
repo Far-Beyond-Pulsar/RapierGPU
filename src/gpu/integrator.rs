@@ -132,6 +132,17 @@ impl GpuIntegrator {
                     },
                     count: None,
                 },
+                // Inv inertias (binding 8) - READ ONLY
+                wgpu::BindGroupLayoutEntry {
+                    binding: 8,
+                    visibility: wgpu::ShaderStages::COMPUTE,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Storage { read_only: true },
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
             ],
         });
         
@@ -223,6 +234,10 @@ impl GpuIntegrator {
                 wgpu::BindGroupEntry {
                     binding: 7,
                     resource: gpu_buffer.inv_masses_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 8,
+                    resource: gpu_buffer.inv_inertias_buffer.as_entire_binding(),
                 },
             ],
         });

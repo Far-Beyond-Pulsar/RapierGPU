@@ -47,6 +47,18 @@ path = "./harness_capsules3.rs"
 name = "gpu_benchmark"
 path = "./gpu_benchmark.rs"
 
+[[bin]]
+name = "gpu_debug_benchmark"
+path = "./gpu_debug_benchmark.rs"
+
+[[bin]]
+name = "gpu_scaling_test"
+path = "./gpu_scaling_test.rs"
+
+[[bin]]
+name = "phase2_summary"
+path = "./phase2_summary.rs"
+
 #[lib]
 #crate-type = ["cdylib", "rlib"]
 #path = "./all_examples3_wasm.rs"

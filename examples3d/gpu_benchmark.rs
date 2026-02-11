@@ -7,9 +7,10 @@
 
 use rapier3d::prelude::*;
 use rapier3d::gpu::{GpuContext, BufferManager, GpuIntegrator, wgpu};
+use rapier3d::na::Point3;
 use std::time::Instant;
 
-const SCALES: &[usize] = &[10, 50, 100, 500, 1000, 5000, 10000, 50000, 100000, 500000, 1000000];
+const SCALES: &[usize] = &[10, 50, 100, 500, 1000, 5000, 10000, 50000/*, 100000, 1_000_000, 100_000_000*/];
 const ITERATIONS: usize = 100;
 const SIMULATION_FRAMES: usize = 10; // Run multiple frames per measurement
 
@@ -28,9 +29,17 @@ fn create_test_bodies(count: usize) -> RigidBodySet {
         let y = (i / 10) as Real;
         let z = (i / 100) as Real;
         
+        // Create mass properties manually since bodies have no colliders
+        let mass_props = MassProperties::new(
+            Vector::new(0.0, 0.0, 0.0),  // center of mass
+            1.0,  // mass = 1.0 kg
+            Vector::new(1.0, 1.0, 1.0)  // principal inertia
+        );
+        
         let body = RigidBodyBuilder::dynamic()
             .translation(Vector::new(x * 2.0, y * 2.0 + 10.0, z * 2.0))
             .linvel(Vector::new(0.0, -1.0, 0.0))
+            .additional_mass_properties(mass_props)
             .build();
         
         bodies.insert(body);
@@ -92,6 +101,8 @@ fn benchmark_gpu_naive(
             integrator.integrate(device, queue, gpu_buffer, dt, gravity, 0.0, 0.0);
             let (_positions, _velocities) = buffer_manager.download_rigid_bodies(gpu_buffer);
         }
+        // Wait for GPU to finish all work
+        device.poll(wgpu::Maintain::Wait);
     }
     let elapsed = start.elapsed();
     
@@ -116,6 +127,9 @@ fn benchmark_gpu_delta(
             // Data stays on GPU permanently (realistic production scenario)
             integrator.integrate(device, queue, gpu_buffer, dt, gravity, 0.0, 0.0);
         }
+        // CRITICAL: Wait for GPU to actually finish!
+        // queue.submit() is async, doesn't wait for completion
+        device.poll(wgpu::Maintain::Wait);
     }
     let elapsed = start.elapsed();
     
