@@ -73,6 +73,14 @@ pub struct GpuMatrix3 {
     pub data: [f32; 12], // 3x3 matrix + padding to 4x3
 }
 
+/// All four mutable body-state arrays downloaded from the GPU in one pass.
+pub struct GpuFullState {
+    pub positions: Vec<GpuVector3>,
+    pub rotations: Vec<GpuRotation>,
+    pub lin_velocities: Vec<GpuVector3>,
+    pub ang_velocities: Vec<GpuVector3>,
+}
+
 /// Manages GPU buffer lifecycle and CPU↔GPU transfers.
 pub struct BufferManager {
     device: std::sync::Arc<wgpu::Device>,
@@ -325,6 +333,72 @@ impl BufferManager {
         velocities_staging.unmap();
 
         (positions, velocities)
+    }
+
+    /// Download all four mutable state arrays from GPU in a single command pass.
+    ///
+    /// Returns positions, rotations, linear velocities, and angular velocities
+    /// exactly as they exist on the GPU after integration.
+    pub fn download_full_state(&self, gpu_buffer: &RigidBodyGpuBuffer) -> GpuFullState {
+        let n = gpu_buffer.body_count;
+        let vec3_bytes = (n * std::mem::size_of::<GpuVector3>()) as u64;
+        let rot_bytes  = (n * std::mem::size_of::<GpuRotation>()) as u64;
+
+        let make_staging = |label: &'static str, size: u64| {
+            self.device.create_buffer(&wgpu::BufferDescriptor {
+                label: Some(label),
+                size,
+                usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
+                mapped_at_creation: false,
+            })
+        };
+
+        let pos_stg = make_staging("pos_staging",    vec3_bytes);
+        let rot_stg = make_staging("rot_staging",    rot_bytes);
+        let lv_stg  = make_staging("linvel_staging", vec3_bytes);
+        let av_stg  = make_staging("angvel_staging", vec3_bytes);
+
+        let mut enc = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("Full State Download"),
+        });
+        enc.copy_buffer_to_buffer(&gpu_buffer.positions_buffer,      0, &pos_stg, 0, vec3_bytes);
+        enc.copy_buffer_to_buffer(&gpu_buffer.rotations_buffer,       0, &rot_stg, 0, rot_bytes);
+        enc.copy_buffer_to_buffer(&gpu_buffer.lin_velocities_buffer,  0, &lv_stg,  0, vec3_bytes);
+        enc.copy_buffer_to_buffer(&gpu_buffer.ang_velocities_buffer,  0, &av_stg,  0, vec3_bytes);
+        self.queue.submit(Some(enc.finish()));
+
+        pos_stg.slice(..).map_async(wgpu::MapMode::Read, |_| {});
+        rot_stg.slice(..).map_async(wgpu::MapMode::Read, |_| {});
+        lv_stg.slice(..).map_async(wgpu::MapMode::Read, |_| {});
+        av_stg.slice(..).map_async(wgpu::MapMode::Read, |_| {});
+
+        self.device.poll(wgpu::Maintain::Wait);
+
+        let positions = {
+            let data = pos_stg.slice(..).get_mapped_range();
+            bytemuck::cast_slice::<u8, GpuVector3>(&data).to_vec()
+        };
+        pos_stg.unmap();
+
+        let rotations = {
+            let data = rot_stg.slice(..).get_mapped_range();
+            bytemuck::cast_slice::<u8, GpuRotation>(&data).to_vec()
+        };
+        rot_stg.unmap();
+
+        let lin_velocities = {
+            let data = lv_stg.slice(..).get_mapped_range();
+            bytemuck::cast_slice::<u8, GpuVector3>(&data).to_vec()
+        };
+        lv_stg.unmap();
+
+        let ang_velocities = {
+            let data = av_stg.slice(..).get_mapped_range();
+            bytemuck::cast_slice::<u8, GpuVector3>(&data).to_vec()
+        };
+        av_stg.unmap();
+
+        GpuFullState { positions, rotations, lin_velocities, ang_velocities }
     }
 
     /// Helper to convert Rapier vector to GPU format (3D).

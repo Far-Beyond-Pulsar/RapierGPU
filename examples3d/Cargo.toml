@@ -61,6 +61,10 @@ path = "./gpu_scaling_test.rs"
 name = "phase2_summary"
 path = "./phase2_summary.rs"
 
+[[bin]]
+name = "gpu_parity_test"
+path = "./gpu_parity_test.rs"
+
 #[lib]
 #crate-type = ["cdylib", "rlib"]
 #path = "./all_examples3_wasm.rs"

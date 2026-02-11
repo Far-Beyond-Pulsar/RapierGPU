@@ -53,7 +53,10 @@ mod tests;
 #[cfg(feature = "gpu-acceleration")]
 pub use device::GpuContext;
 #[cfg(feature = "gpu-acceleration")]
-pub use buffer_manager::{BufferManager, RigidBodyGpuBuffer};
+pub use buffer_manager::{
+    BufferManager, RigidBodyGpuBuffer,
+    GpuVector3, GpuRotation, GpuMatrix3, GpuFullState,
+};
 #[cfg(feature = "gpu-acceleration")]
 pub use pipeline::GpuComputePipeline;
 #[cfg(feature = "gpu-acceleration")]
