@@ -90,7 +90,7 @@ fn benchmark_gpu_naive(
         for _ in 0..frames {
             // NAIVE: Upload + compute + download EVERY frame (worst case)
             buffer_manager.upload_rigid_bodies(bodies, gpu_buffer);
-            integrator.integrate(device, queue, gpu_buffer, dt, gravity, 0.0, 0.0);
+            integrator.integrate(device, queue, gpu_buffer, dt, gravity, 0.0, 0.0, true);
             let (_positions, _velocities) = buffer_manager.download_rigid_bodies(gpu_buffer);
         }
     }
@@ -115,7 +115,7 @@ fn benchmark_gpu_resident(
         for _ in 0..frames {
             // GPU-RESIDENT: Compute only, no transfers!
             // This is realistic when bodies stay on GPU for many frames
-            integrator.integrate(device, queue, gpu_buffer, dt, gravity, 0.0, 0.0);
+            integrator.integrate(device, queue, gpu_buffer, dt, gravity, 0.0, 0.0, true);
         }
     }
     let elapsed = start.elapsed();

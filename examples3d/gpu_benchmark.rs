@@ -102,7 +102,7 @@ fn benchmark_gpu_naive(
         for _ in 0..frames {
             // NAIVE: Upload ALL + compute + download ALL every frame
             buffer_manager.upload_rigid_bodies(bodies, gpu_buffer);
-            integrator.integrate(device, queue, gpu_buffer, dt, gravity, 0.0, 0.0);
+            integrator.integrate(device, queue, gpu_buffer, dt, gravity, 0.0, 0.0, true);
             let (_positions, _velocities) = buffer_manager.download_rigid_bodies(gpu_buffer);
         }
         // Wait for GPU to finish all work
@@ -129,7 +129,7 @@ fn benchmark_gpu_delta(
         for _ in 0..frames {
             // DELTA/GPU-RESIDENT: Compute only, NO transfers!
             // Data stays on GPU permanently (realistic production scenario)
-            integrator.integrate(device, queue, gpu_buffer, dt, gravity, 0.0, 0.0);
+            integrator.integrate(device, queue, gpu_buffer, dt, gravity, 0.0, 0.0, true);
         }
         // CRITICAL: Wait for GPU to actually finish!
         // queue.submit() is async, doesn't wait for completion

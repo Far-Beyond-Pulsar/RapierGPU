@@ -37,7 +37,7 @@ fn main() {
         // Run 100 iterations and time
         let start = std::time::Instant::now();
         for _ in 0..100 {
-            integrator.integrate(&gpu_ctx.device, &gpu_ctx.queue, &mut gpu_buffer, 1.0/60.0, [0.0, -9.81, 0.0], 0.0, 0.0);
+            integrator.integrate(&gpu_ctx.device, &gpu_ctx.queue, &mut gpu_buffer, 1.0/60.0, [0.0, -9.81, 0.0], 0.0, 0.0, true);
         }
         gpu_ctx.device.poll(wgpu::Maintain::Wait);
         let elapsed = start.elapsed();

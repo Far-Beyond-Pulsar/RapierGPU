@@ -16,7 +16,7 @@ struct IntegrationParams {
     gravity_z: f32,
     linear_damping: f32,
     angular_damping: f32,
-    _padding: f32,
+    clear_forces: u32,  // 1 = clear forces after integration, 0 = accumulate
 }
 
 struct GpuVector3 {
@@ -45,8 +45,8 @@ struct GpuMatrix3 {
 @group(0) @binding(2) var<storage, read_write> rotations: array<GpuRotation>;
 @group(0) @binding(3) var<storage, read_write> lin_velocities: array<GpuVector3>;
 @group(0) @binding(4) var<storage, read_write> ang_velocities: array<GpuVector3>;
-@group(0) @binding(5) var<storage, read> forces: array<GpuVector3>;
-@group(0) @binding(6) var<storage, read> torques: array<GpuVector3>;
+@group(0) @binding(5) var<storage, read_write> forces: array<GpuVector3>;
+@group(0) @binding(6) var<storage, read_write> torques: array<GpuVector3>;
 @group(0) @binding(7) var<storage, read> inv_masses: array<f32>;
 @group(0) @binding(8) var<storage, read> inv_inertias: array<GpuMatrix3>;
 
@@ -126,13 +126,14 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
     let linear_acceleration = force * inv_mass + gravity;
     lin_vel = lin_vel + linear_acceleration * params.dt;
     
-    // 2. Apply linear damping: v' = v * (1 - damping * dt)
-    let linear_damping_factor = max(0.0, 1.0 - params.linear_damping * params.dt);
-    lin_vel = lin_vel * linear_damping_factor;
-    
-    // 3. Update position using NEW velocity (symplectic Euler)
+    // 2. Update position using NEW velocity (symplectic Euler)
     // p' = p + v' * dt
     pos = pos + lin_vel * params.dt;
+    
+    // 3. Apply linear damping AFTER position update (correct formula)
+    // v' = v / (1 + damping * dt)
+    let linear_damping_divisor = 1.0 + params.linear_damping * params.dt;
+    lin_vel = lin_vel / linear_damping_divisor;
     
     // ========== ANGULAR INTEGRATION ==========
     
@@ -157,11 +158,7 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
     // Update angular velocity
     ang_vel = ang_vel + ang_accel_world * params.dt;
     
-    // 5. Apply angular damping
-    let angular_damping_factor = max(0.0, 1.0 - params.angular_damping * params.dt);
-    ang_vel = ang_vel * angular_damping_factor;
-    
-    // 6. Update rotation using quaternion derivative
+    // 5. Update rotation using quaternion derivative
     // q' = q + 0.5 * dt * quat(ω, 0) * q
     // This is the quaternion differential equation for rotation
     let half_dt = params.dt * 0.5;
@@ -169,8 +166,13 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
     let quat_deriv = quat_mul(ang_vel_quat, quat);
     quat = quat + quat_deriv * half_dt;
     
-    // 7. Normalize quaternion to prevent drift
+    // 6. Normalize quaternion to prevent drift
     quat = quat_normalize(quat);
+    
+    // 7. Apply angular damping AFTER rotation update (correct formula)
+    // ω' = ω / (1 + damping) [note: no dt factor for angular in Rapier]
+    let angular_damping_divisor = 1.0 + params.angular_damping;
+    ang_vel = ang_vel / angular_damping_divisor;
     
     // ========== Write back updated state ==========
     positions[idx].x = pos.x;
@@ -189,4 +191,15 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
     ang_velocities[idx].x = ang_vel.x;
     ang_velocities[idx].y = ang_vel.y;
     ang_velocities[idx].z = ang_vel.z;
+    
+    // Clear forces if requested (for per-frame force application)
+    if (params.clear_forces != 0u) {
+        forces[idx].x = 0.0;
+        forces[idx].y = 0.0;
+        forces[idx].z = 0.0;
+        
+        torques[idx].x = 0.0;
+        torques[idx].y = 0.0;
+        torques[idx].z = 0.0;
+    }
 }

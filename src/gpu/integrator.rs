@@ -21,7 +21,7 @@ struct IntegrationParams {
     gravity_z: f32,
     linear_damping: f32,
     angular_damping: f32,
-    _padding: f32,
+    clear_forces: u32,  // 1 = clear forces after integration, 0 = accumulate
 }
 
 /// GPU integration kernel
@@ -99,23 +99,23 @@ impl GpuIntegrator {
                     },
                     count: None,
                 },
-                // Forces (binding 5, read-only)
+                // Forces (binding 5, read-write for clearing)
                 wgpu::BindGroupLayoutEntry {
                     binding: 5,
                     visibility: wgpu::ShaderStages::COMPUTE,
                     ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Storage { read_only: true },
+                        ty: wgpu::BufferBindingType::Storage { read_only: false },
                         has_dynamic_offset: false,
                         min_binding_size: None,
                     },
                     count: None,
                 },
-                // Torques (binding 6, read-only)
+                // Torques (binding 6, read-write for clearing)
                 wgpu::BindGroupLayoutEntry {
                     binding: 6,
                     visibility: wgpu::ShaderStages::COMPUTE,
                     ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Storage { read_only: true },
+                        ty: wgpu::BufferBindingType::Storage { read_only: false },
                         has_dynamic_offset: false,
                         min_binding_size: None,
                     },
@@ -179,6 +179,7 @@ impl GpuIntegrator {
         gravity: [f32; 3],
         linear_damping: f32,
         angular_damping: f32,
+        clear_forces: bool,
     ) {
         let params = IntegrationParams {
             body_count: gpu_buffer.body_count as u32,
@@ -188,7 +189,7 @@ impl GpuIntegrator {
             gravity_z: gravity[2],
             linear_damping,
             angular_damping,
-            _padding: 0.0,
+            clear_forces: if clear_forces { 1 } else { 0 },
         };
         
         // Create params buffer

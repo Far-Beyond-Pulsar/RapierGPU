@@ -52,7 +52,7 @@ fn main() {
         
         // Compute (single frame)
         let t1 = Instant::now();
-        integrator.integrate(&gpu_ctx.device, &gpu_ctx.queue, &mut gpu_buffer, 1.0/60.0, [0.0, -9.81, 0.0], 0.0, 0.0);
+        integrator.integrate(&gpu_ctx.device, &gpu_ctx.queue, &mut gpu_buffer, 1.0/60.0, [0.0, -9.81, 0.0], 0.0, 0.0, true);
         gpu_ctx.device.poll(wgpu::Maintain::Wait);
         let compute_time = t1.elapsed();
         
