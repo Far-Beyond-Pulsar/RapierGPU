@@ -23,6 +23,8 @@ serde_json = "1"
 dot_vox = "5"
 glam = { version = "0.30.9", features = ["fast-math"] }
 kiss3d = { version = "0.40.0", features = ["egui", "parry", "serde"] }
+owo-colors = "4"
+comfy-table = "7"
 
 [dependencies.rapier_testbed3d]
 path = "../crates/rapier_testbed3d"
@@ -42,6 +44,26 @@ path = "./all_examples3.rs"
 [[bin]]
 name = "harness_capsules3"
 path = "./harness_capsules3.rs"
+
+[[bin]]
+name = "gpu_benchmark"
+path = "./gpu_benchmark.rs"
+
+[[bin]]
+name = "gpu_debug_benchmark"
+path = "./gpu_debug_benchmark.rs"
+
+[[bin]]
+name = "gpu_scaling_test"
+path = "./gpu_scaling_test.rs"
+
+[[bin]]
+name = "phase2_summary"
+path = "./phase2_summary.rs"
+
+[[bin]]
+name = "gpu_parity_test"
+path = "./gpu_parity_test.rs"
 
 #[lib]
 #crate-type = ["cdylib", "rlib"]

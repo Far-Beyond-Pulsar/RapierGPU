@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(del \"D:\\Documents\\GitHub\\genesis\\rapier\\examples3d\\gpu_transfer_benchmark.rs\")",
+      "Bash(rm:*)",
+      "Bash(cargo check:*)"
+    ]
+  }
+}

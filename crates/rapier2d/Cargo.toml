@@ -49,6 +49,7 @@ serde-serialize = [
 enhanced-determinism = ["simba/libm_force", "parry2d/enhanced-determinism"]
 debug-render = []
 profiler = ["dep:web-time"] # Enables the internal profiler.
+gpu-acceleration = ["dep:wgpu", "dep:bytemuck", "dep:pollster"] # Enables GPU compute via WGPU
 
 # Feature used for debugging only.
 debug-disable-legitimate-fe-exceptions = []
@@ -92,8 +93,19 @@ static_assertions = "1"
 # TODO: should be re-exported from simba
 wide = "0.7.1"
 
+# GPU acceleration dependencies
+wgpu = { version = "22", optional = true }
+bytemuck = { version = "1.14", optional = true, features = ["derive"] }
+pollster = { version = "0.3", optional = true }
+
 [dev-dependencies]
 bincode = "1"
 serde_json = "1"
 serde = { version = "1", features = ["derive"] }
 oorandom = { version = "11", default-features = false }
+criterion = { version = "0.5", features = ["html_reports"] }
+
+[[bench]]
+name = "gpu_benchmarks"
+harness = false
+required-features = ["gpu-acceleration"]

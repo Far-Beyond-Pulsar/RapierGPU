@@ -169,6 +169,9 @@ pub mod geometry;
 pub mod pipeline;
 pub mod utils;
 
+#[cfg(feature = "gpu-acceleration")]
+pub mod gpu;
+
 /// Elementary mathematical entities (vectors, matrices, isometries, etc).
 pub mod math {
     pub use parry::math::*;
