@@ -9,6 +9,10 @@ use rapier3d::prelude::*;
 use rapier3d::gpu::{GpuContext, BufferManager, GpuIntegrator, wgpu};
 use rapier3d::na::Point3;
 use std::time::Instant;
+use owo_colors::OwoColorize;
+use comfy_table::*;
+use comfy_table::presets::UTF8_FULL;
+use comfy_table::modifiers::UTF8_ROUND_CORNERS;
 
 const SCALES: &[usize] = &[10, 50, 100, 500, 1000, 5000, 10000, 50000/*, 100000, 1_000_000, 100_000_000*/];
 const ITERATIONS: usize = 100;
@@ -137,11 +141,22 @@ fn benchmark_gpu_delta(
 }
 
 fn print_results_table(results: &[BenchmarkResult]) {
-    println!("\n╔═══════════════════════════════════════════════════════════════════════════════════════════════╗");
-    println!("║             CPU vs GPU TRANSFER STRATEGY COMPARISON ({} frames/iter)                      ║", SIMULATION_FRAMES);
-    println!("╠═══════════════════════════════════════════════════════════════════════════════════════════════╣");
-    println!("║  Bodies  │    CPU     │ GPU Naive  │ GPU Delta  │ Naive vs CPU │ Delta vs CPU │   Winner   ║");
-    println!("╠══════════╪════════════╪════════════╪════════════╪══════════════╪══════════════╪════════════╣");
+    println!();
+    
+    let mut table = Table::new();
+    table
+        .load_preset(UTF8_FULL)
+        .apply_modifier(UTF8_ROUND_CORNERS)
+        .set_content_arrangement(ContentArrangement::Dynamic)
+        .set_header(vec![
+            Cell::new("Bodies").fg(Color::Cyan).add_attribute(Attribute::Bold),
+            Cell::new("CPU").fg(Color::Cyan).add_attribute(Attribute::Bold),
+            Cell::new("GPU Naive").fg(Color::Cyan).add_attribute(Attribute::Bold),
+            Cell::new("GPU Delta").fg(Color::Cyan).add_attribute(Attribute::Bold),
+            Cell::new("Naive Speedup").fg(Color::Cyan).add_attribute(Attribute::Bold),
+            Cell::new("Delta Speedup").fg(Color::Cyan).add_attribute(Attribute::Bold),
+            Cell::new("Winner").fg(Color::Cyan).add_attribute(Attribute::Bold),
+        ]);
     
     for result in results {
         let cpu = result.cpu_time;
@@ -163,30 +178,34 @@ fn print_results_table(results: &[BenchmarkResult]) {
             format!("CPU {:.1}x", 1.0 / delta_speedup)
         };
         
-        let winner = if delta_speedup > 1.0 {
-            "🚀 GPU"
+        let (winner, winner_color) = if delta_speedup > 1.0 {
+            ("🚀 GPU", Color::Green)
         } else if naive_speedup > 0.8 {
-            "⚖️  Even"
+            ("⚖️  Even", Color::Yellow)
         } else {
-            "💻 CPU"
+            ("💻 CPU", Color::Red)
         };
         
-        println!("║ {:>8} │ {:>10} │ {:>10} │ {:>10} │ {:>12} │ {:>12} │ {:>10} ║",
-            result.scale,
-            format_time(cpu),
-            format_time(naive),
-            format_time(delta),
-            naive_str,
-            delta_str,
-            winner
-        );
+        let naive_color = if naive_speedup > 1.0 { Color::Green } else { Color::Red };
+        let delta_color = if delta_speedup > 1.0 { Color::Green } else { Color::Red };
+        
+        table.add_row(vec![
+            Cell::new(format!("{:>8}", result.scale)).fg(Color::Yellow),
+            Cell::new(format_time(cpu)).fg(Color::White),
+            Cell::new(format_time(naive)).fg(Color::Yellow),
+            Cell::new(format_time(delta)).fg(Color::Cyan),
+            Cell::new(naive_str).fg(naive_color),
+            Cell::new(delta_str).fg(delta_color).add_attribute(Attribute::Bold),
+            Cell::new(winner).fg(winner_color).add_attribute(Attribute::Bold),
+        ]);
     }
     
-    println!("╚══════════╧════════════╧════════════╧════════════╧══════════════╧══════════════╧════════════╝");
-    println!("\n📊 Key Insights:");
-    println!("  • **GPU Naive**: Upload all + compute + download all (current worst case)");
-    println!("  • **GPU Delta**: Compute only, data GPU-resident (PhysX-style architecture)");
-    println!("  • Delta strategy = production performance! Data lives on GPU.");
+    println!("{}", table);
+    println!();
+    println!("{}", "📊 Key Insights:".bright_yellow().bold());
+    println!("  • {} Upload all + compute + download all every frame", "GPU Naive:".yellow());
+    println!("  • {} Compute only, data stays GPU-resident (PhysX architecture)", "GPU Delta:".cyan().bold());
+    println!("  • {} Eliminating transfer overhead is CRITICAL!", "Delta strategy:".green().bold());
 }
 
 fn format_time(micros: f64) -> String {
@@ -200,27 +219,33 @@ fn format_time(micros: f64) -> String {
 }
 
 fn main() {
-    println!("╔═══════════════════════════════════════════════════════════════════════════════╗");
-    println!("║              RAPIER GPU ACCELERATION: TRANSFER STRATEGY BENCHMARK             ║");
-    println!("╚═══════════════════════════════════════════════════════════════════════════════╝\n");
+    println!();
+    println!("{}", "╔═══════════════════════════════════════════════════════════════════════════════╗".bright_cyan().bold());
+    println!("{}", "║           RAPIER GPU ACCELERATION: TRANSFER STRATEGY BENCHMARK                ║".bright_cyan().bold());
+    println!("{}", "╚═══════════════════════════════════════════════════════════════════════════════╝".bright_cyan().bold());
+    println!();
     
-    println!("Initializing GPU...");
+    println!("{} Initializing GPU...", "🔧".yellow());
     let gpu_ctx = match GpuContext::new() {
         Ok(ctx) => {
-            println!("✓ GPU initialized: {}", ctx.adapter.get_info().name);
+            println!("{} GPU initialized: {}", "✓".green(), ctx.adapter.get_info().name.bright_green().bold());
             ctx
         },
         Err(e) => {
-            println!("✗ GPU not available: {:?}", e);
+            println!("{} GPU not available: {:?}", "✗".red(), e);
             println!("  Cannot run GPU benchmarks");
             return;
         }
     };
+    println!();
     
     let mut results = Vec::new();
     
+    println!("{} Running {} frames per iteration...", "⏱️ ".cyan(), SIMULATION_FRAMES.to_string().yellow().bold());
+    println!();
+    
     for &scale in SCALES {
-        print!("Benchmarking {} bodies... ", scale);
+        print!("{} Benchmarking {} bodies... ", "📊".cyan(), scale.to_string().yellow());
         std::io::Write::flush(&mut std::io::stdout()).unwrap();
         
         let mut bodies = create_test_bodies(scale);
@@ -257,7 +282,7 @@ fn main() {
             gpu_delta_time,
         });
         
-        println!("Done!");
+        println!("{}", "Done!".green());
     }
     
     print_results_table(&results);
